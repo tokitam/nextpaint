@@ -1,32 +1,34 @@
 
-nextpaint version 0.5
+# nextpaint version 0.5
 
-■概要
+###概要
 
 nextpaint は無料で使えるFlashのお絵かきツールです。
 機能はシンプルで最低限の機能のみサポートします。
 
 主な機能
-・色、透明度、ペンサイズを選んでフリーハンドで描画
-・スポイント機能
-・サーバへ画像保存
-・無制限アンドゥ
-・画像初期化
-・パラメータで画像サイズの指定
+-色、透明度、ペンサイズを選んでフリーハンドで描画
+-スポイント機能
+-サーバへ画像保存
+-無制限アンドゥ
+-画像初期化
+-パラメータで画像サイズの指定
 
 
-■設置について
+###設置について
 
 ウェブサーバの任意の場所に nextpaint.swf を置いて、任意のウェブページに
 以下のタグを記述してください。Flash対応のブラウザで閲覧すると nextpaint が
 表示されます。
 
 ----------------------------------------------------------------------
+```
 <object type="application/x-shockwave-flash" 
  data="nextpaint.swf" width="776" height="500" >
   <param name="movie" value="nextpaint.swf" />
   <param name="FlashVars" value="imageWidth=640&imageHeight=480" />
 </object>
+```
 ----------------------------------------------------------------------
 
 
@@ -34,9 +36,9 @@ nextpaint は無料で使えるFlashのお絵かきツールです。
 
 FlashVars を記述することで nextpaint にパラメータを渡すことができます。
 パラメータは以下のように & 区切りで キー=値 で記述します。
-
+```
 <param name="FlashVars" value="imageWidth=640&imageHeight=480" />
-
+```
 imageWidth:
 お絵かきできる画像の横サイズ
 
@@ -53,12 +55,14 @@ uploadurl:
 なります。
 
 ----------------------------------------------------------------------
+```
 <object type="application/x-shockwave-flash"
 data="nextpaint.swf" width="456" height="500" >
   <param name="movie" value="nextpaint.swf" />
   <param name="FlashVars" value="imageWidth=320&imageHeight=480&uploadurl=http%3A%2F%2Fwww.example.com%2Fupload.php"
 />
 </object>
+```
 ----------------------------------------------------------------------
 
 なお、Flash自体の縦横サイズは 画像の横サイズ + 126、画像の縦サイズ + 20 
@@ -72,6 +76,7 @@ POSTします。
 以下はPHPで受信してPNGファイルを生成するサンプルです。
 
 ----------------------------------------------------------------------
+```
 <?php
 
 $png = file_get_contents("php://input");
@@ -83,9 +88,10 @@ fwrite($fp, $png);
 fclose($fp);
 
 ?>
+```
 ----------------------------------------------------------------------
 
-■ライセンスについて
+#ライセンスについて
 
 MIT ライセンスで配布します。
 再配布・修正したファイルの再配布が可能です。
@@ -98,7 +104,7 @@ Flashの中にある「(C) tokita」のコピーライト表示、URLの表示�
 
 
 アイコンについて以下の通り
-
+```
 Fugue Icons
 ============================================================
 Copyright (C) 2009 Yusuke Kamiyamane. All rights reserved.
@@ -107,7 +113,7 @@ The icons are licensed under a Creative Commons Attribution
 ------------------------------------------------------------
 If you can't or don't want to place link back, please
 purchase a royalty-free license. <http://www.pinvoke.com/>
-
+```
 
 copyright(c)2009 Masahiko Tokita http://tokita.net/ 
 
