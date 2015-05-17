@@ -14,6 +14,8 @@ nextpaint は無料で使えるFlashのお絵かきツールです。
 -画像初期化
 -パラメータで画像サイズの指定
 
+###動作サンプル
+http://spicky.net/sample1/paint/1956/
 
 ###設置について
 
