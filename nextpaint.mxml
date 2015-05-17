@@ -1,0 +1,547 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!-- 
+  MIT License
+  http://www.opensource.org/licenses/mit-license.php
+  
+  copyright(c)2009 Masahiko Tokita http://tokita.net/
+-->
+
+<mx:Application xmlns:mx="http://www.adobe.com/2006/mxml" layout="absolute"
+	backgroundColor="#FFFFFF"
+	backgroundGradientColors="[0x555555, 0x999999]"
+	applicationComplete="initFunc();"
+	 >
+
+	<mx:Script>
+		<![CDATA[
+ 
+import mx.controls.Alert;
+import mx.events.CloseEvent;
+import mx.core.UIComponent;
+import flash.display.Bitmap;
+import flash.display.BitmapData;
+import mx.graphics.codec.PNGEncoder;
+
+public var fromX:Number;
+public var fromY:Number; 
+public var toX:Number = 0;
+public var toY:Number = 0;
+
+// 現在の色
+public var currColor:Number = 0x000000;
+// 現在の透明度
+public var currAlpha:Number = 10;
+
+// ブラシのタイプ 
+public var brushType:Number = 0;
+
+// 描き込み中フラグ
+public var flgNowPainting:Boolean = false;
+
+// ドラッグしたときに記録するフラグ。MouseDownしたときに初期化。MouseUpしたときに判定に使う
+public var flgDrag:Boolean = false;
+
+public var flgFirst:Boolean = true;
+
+public var baseBitmapData:BitmapData = null;
+
+// 描画の記録
+public var drawRecord:Array = new Array();
+
+// ラインの記録
+public var drawRecordLine:Array = new Array();
+
+// ブラシパレットの横サイズ
+public const BRUSH_WIDTH:int = 20;
+
+// ブラシの太さの率
+public const BRUSH_BASE_RATE:int = 6;
+
+// ブラシの太さの補正値
+public const BRUSH_BASE_RATE_B:int = 5;
+
+// キャンバスの初期の色
+public const MAIN_IMAGE_COLOR:int = 0xFFFFFF;
+
+// サイドなどの背景色
+public const BACK_COLOR:int = 0xCCDDCC;
+
+// SharedObject で記録する名前
+public const SHARED_OBJECT_NAME:String = 'nextpaint';
+
+// リンクボタンのリンク先URL
+public const URL_TOKITA_NET:String = 'http://tokita.net/';
+
+public var clearMessage:String = 'Do you initialize it?';
+
+public var saveMessage:String = 'Is the image preserved in the server?';
+
+public var clearTitleMessage:String = 'Clear';
+
+public var saveTitleMessage:String = 'Save';
+
+public var saveCompleteMessage:String = 'Saved';
+
+// 初期化
+public function initFunc():void { 
+	// language select
+	if (Application.application.parameters.lang == 'ja') {
+		// japanese 日本語の場合
+		saveButton.toolTip = 'サーバへ保存';
+		spuitButton.toolTip = 'スポイト';
+		undoButton.toolTip = 'やり直し';
+		clearButton.toolTip = '白紙';
+		alphaComboBox.toolTip = '透明度';
+		
+		clearMessage = '画像をクリアしますか？';
+		saveMessage = 'サーバへ画像を保存しますか？';
+		clearTitleMessage = 'クリア';
+		saveTitleMessage = '画像保存';
+		saveCompleteMessage = 'サーバへ送信しました';
+	}
+	
+	var width:int = int(Application.application.parameters.imageWidth);
+    var height:int = int(Application.application.parameters.imageHeight);
+    
+	if (0 < width && 0 < height) {
+		// メイン画像のサイズ調整
+		mainImage.width = width;
+		mainImage.height = height;
+	}
+	
+	if (Application.application.parameters.uploadurl == null ||
+		Application.application.parameters.uploadurl == '') {
+		// uploadurlが無い場合は画像保存ボタンを無効にする
+		saveButton.enabled = false;
+	}
+
+	// メイン画像を白で塗りつぶし
+	mainImageAllDelete();
+	// メイン画像の周りを塗りつぶし
+	sideBackImagePaint();
+	
+	// ハンドカーロスをOFF
+	this.useHandCursor = false;
+	
+	// マウス操作のイベントをセット 
+	brushImage.addEventListener(flash.events.MouseEvent.MOUSE_DOWN, brushImageMouseDown);
+	colorImage.addEventListener(flash.events.MouseEvent.MOUSE_DOWN, colorImageMouseDown);
+	mainImage.addEventListener(flash.events.MouseEvent.MOUSE_DOWN, mainImageMouseDown);
+	mainImage.addEventListener(flash.events.MouseEvent.MOUSE_UP, mainImageMouseUp);
+	mainImage.addEventListener(flash.events.MouseEvent.MOUSE_OUT , mainImageMouseOut);
+	mainImage.addEventListener(flash.events.MouseEvent.MOUSE_MOVE, mainImageMouseMove);
+	
+	// アンドゥのキー入力
+	stage.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
+	
+	// SharedObjectを読んで、記録があったら、色、ペンサイズをセットする
+	var sp:SharedObject = SharedObject.getLocal(SHARED_OBJECT_NAME);
+	if (sp.data.color) {
+		colorPicker.selectedColor = sp.data.color;
+	}
+	if (sp.data.brush) {
+		brushType = sp.data.brush;
+		setBoxImageXY();
+	}
+	
+	// タイトル画像の位置調整
+	title.x = (this.width / 2) - (title.width / 2);
+	title.y = (this.height / 2) - (title.height / 2);
+	
+	// エフェクトをつけながらタイトル画像を非表示にする
+	title.setVisible(false);
+	
+	drawBaseImage();
+	flgFirst = false;
+}	
+
+public function mainImageMouseDown(event:MouseEvent):void {
+	fromX = event.localX;
+	fromY = event.localY;
+	
+	if (this.useHandCursor) {
+		var b:BitmapData = getBitmapData(UIComponent(mainImage));
+		var p:Number = b.getPixel(fromX, fromY);
+		colorPicker.selectedColor = p;
+		
+		this.buttonMode = false;
+		this.useHandCursor = false;
+		
+		return;
+	}
+	
+	// 描き込み中フラグをON
+	flgNowPainting = true;
+	
+	currColor = colorPicker.selectedColor;
+	currAlpha = alphaComboBox.selectedItem.label;
+	
+	mainImage.graphics.lineStyle((brushType + 1) * BRUSH_BASE_RATE - BRUSH_BASE_RATE_B, currColor, currAlpha / 100);
+	mainImage.graphics.moveTo(fromX, fromY);
+	
+	setDrawRecord(fromX, fromY, currColor, currAlpha, brushType);
+	
+	var sp:SharedObject = SharedObject.getLocal(SHARED_OBJECT_NAME);
+	sp.data.color = currColor;
+	sp.data.brush = brushType;
+	sp.data.alpha = currAlpha;
+	sp.flush();
+
+}
+
+public function mainImageMouseUp(event:MouseEvent):void {
+	mainImageDraw(toX, toY);
+}
+
+public function mainImageMouseOut(event:MouseEvent):void {
+	if (flgNowPainting) {
+		toX = event.localX;
+		toY = event.localY;
+	
+		mainImageDraw(toX, toY);
+	}
+}
+
+public function setDrawRecord(x:int, y:int, color:int, alpha:int, brush:int):void {
+	var map:Array = new Array();											
+	map[0] = x;
+	map[1] = y;
+	map[2] = color;
+	map[3] = alpha;
+	map[4] = brush;
+
+	drawRecord.push(map);	
+}
+
+public function mainImageMouseMove(event:MouseEvent):void {
+
+
+	if (flgNowPainting == false) {
+		// 書き込み中フラグがOFFなら戻る
+		return;
+	}
+
+	// ドラッグフラグをON
+	flgDrag = true;
+		
+	setDrawRecord(event.localX, event.localY, currColor, currAlpha, brushType);		
+
+	toX = event.localX;
+	toY = event.localY;
+
+	mainImage.graphics.lineTo(toX, toY);
+}
+
+public function mainImageDraw(toX:Number, toY:Number):void {
+	// 描き込み中フラグをOFF
+	flgNowPainting = false;
+	
+	if (flgDrag) {
+		mainImage.graphics.lineTo(toX, toY);
+		
+		setDrawRecord(toX, toY, currColor, currAlpha, brushType);		
+	}
+	
+	drawRecordLine.push(drawRecord);
+	
+	drawRecord = null;
+	drawRecord = new Array();
+	
+	// ドラッグフラグをOFF
+	flgDrag = false;
+	
+}
+
+public function undo():void {
+	if (drawRecordLine.length == 0) {
+		return;
+	}
+	
+	mainImageAllDelete();
+	
+	drawRecordLine[drawRecordLine.length - 1] = null;
+	drawRecordLine.pop(); 
+	
+	var i:int = 0;
+	var j:int = 0;
+	for (j=0; j < drawRecordLine.length; j++) {
+		
+		var record:Array = drawRecordLine[j];
+		
+		if (record == null) {
+			continue;			
+		}
+		if (record.length == 0) {
+			continue;			
+		}
+
+		var map:Array = record[0];
+		
+		if (map == null) {
+			continue;
+		}
+
+		
+		var fx:int = map[0];
+		var fy:int = map[1];
+		
+		var color:int = map[2];
+		var alpha:int = map[3];
+		var brush:int = map[4];
+		
+		mainImage.graphics.lineStyle((brush + 1) * BRUSH_BASE_RATE - BRUSH_BASE_RATE_B, color, alpha / 100);
+		mainImage.graphics.moveTo(fx, fy);
+		
+		for (i=0; i < record.length; i++) {
+			map = record[i];
+		
+			fx = map[0];
+			fy = map[1];
+			color = map[2];
+			alpha = map[3];
+			brush = map[4];
+		
+			mainImage.graphics.lineTo(fx, fy);
+		}
+	}
+}
+
+public function clickSpuitButton():void {
+	this.buttonMode = true;
+	this.useHandCursor = true;
+}
+
+private function mainImageClear():void {
+	Alert.show(clearMessage, clearTitleMessage,
+            Alert.OK | Alert.CANCEL, this,
+            mainImageClearDo, null, Alert.OK);	
+}
+
+private function mainImageClearDo(event:CloseEvent):void {
+	if (event.detail == Alert.OK) {
+		mainImageAllDelete();
+		drawRecordLine = null;
+		drawRecordLine = new Array();
+	}
+}
+
+private function mainImageUpload():void {
+	Alert.show(saveMessage, saveTitleMessage,
+            Alert.OK | Alert.CANCEL, this,
+            mainImageUploadDo, null, Alert.OK);	
+} 
+
+private function mainImageUploadDo(eventObj:CloseEvent):void {
+	
+	if (eventObj.detail == Alert.CANCEL) {
+		return;
+	}
+
+	var pngEncoder:PNGEncoder = new PNGEncoder();
+	var bytes:ByteArray = pngEncoder.encode(getBitmapData(UIComponent(mainImage)));
+	
+	if (Application.application.parameters.uploadurl == null ||
+		Application.application.parameters.uploadurl == '') {
+		Alert.show('"uploadurl" setting not found');
+		return;
+	}
+	
+	var uploadUrl:String = Application.application.parameters.uploadurl;
+
+	var request:URLRequest = new URLRequest(uploadUrl);
+	var loader: URLLoader = new URLLoader();
+	request.contentType = 'application/octet-stream';
+	request.method = URLRequestMethod.POST;
+	request.data = bytes;
+	
+	loader.addEventListener(Event.COMPLETE, loaderCompleteHandler);
+	loader.addEventListener(SecurityErrorEvent.SECURITY_ERROR, loaderSecurityErrorHandler);
+	loader.addEventListener(IOErrorEvent.IO_ERROR, loaderIoErrorHandler);
+
+	loader.load(request);
+}
+
+private function loaderCompleteHandler(event:Event):void {
+	Alert.show(saveCompleteMessage);
+}
+
+private function loaderSecurityErrorHandler(event:SecurityErrorEvent):void {
+	Alert.show('Security Error');
+}
+
+private function loaderIoErrorHandler(event:IOErrorEvent):void {
+	Alert.show('IO Error')
+}
+
+private function clickLinkButton():void {
+	var request:URLRequest = new URLRequest(URL_TOKITA_NET);
+	navigateToURL(request, '_blank');	
+}
+
+public function mainImageAllDelete():void {
+	// メイン画面を白にする
+	
+	mainImage.graphics.clear();
+	mainImage.graphics.lineStyle(1, MAIN_IMAGE_COLOR);
+	mainImage.graphics.beginFill(MAIN_IMAGE_COLOR);
+	mainImage.graphics.drawRect(0, 0, mainImage.width, mainImage.height);
+	mainImage.graphics.endFill();		
+	
+	if (baseBitmapData != null && Application.application.parameters.baseimage != '') {
+        mainImage.graphics.beginBitmapFill(baseBitmapData);
+        mainImage.graphics.drawRect( 0, 0, mainImage.width, mainImage.height );
+		mainImage.graphics.endFill();
+	}
+} 
+
+public function sideBackImagePaint():void {
+	sideBackImage.width = this.width;
+	sideBackImage.height = this.height;
+	
+	// メイン画像を取り囲むようにサイドの背景画像を塗りつぶす
+	sideBackImage.graphics.lineStyle(1, BACK_COLOR);
+	sideBackImage.graphics.beginFill(BACK_COLOR);
+	sideBackImage.graphics.drawRect(0, 0, mainImage.x - 1, this.height);
+	sideBackImage.graphics.endFill();		
+
+	sideBackImage.graphics.lineStyle(1, BACK_COLOR);
+	sideBackImage.graphics.beginFill(BACK_COLOR);
+	sideBackImage.graphics.drawRect(mainImage.x, 0, this.width, mainImage.y - 1);
+	sideBackImage.graphics.endFill();		
+
+	sideBackImage.graphics.lineStyle(1, BACK_COLOR);
+	sideBackImage.graphics.beginFill(BACK_COLOR);
+	sideBackImage.graphics.drawRect(0, mainImage.y + mainImage.height, this.width, this.height);
+	sideBackImage.graphics.endFill();		
+
+	sideBackImage.graphics.lineStyle(1, BACK_COLOR);
+	sideBackImage.graphics.beginFill(BACK_COLOR);
+	sideBackImage.graphics.drawRect(mainImage.x + mainImage.width, 0, this.width, this.height);
+	sideBackImage.graphics.endFill();
+	
+}
+
+public function colorImageMouseDown(event:MouseEvent):void {
+	var x:int = event.localX;
+	var y:int = event.localY;
+	
+	var b:BitmapData = getBitmapData(UIComponent(colorImage));
+	var p:Number = b.getPixel(x, y);
+	colorPicker.selectedColor = p;
+		
+	this.buttonMode = false;
+	this.useHandCursor = false;
+}
+
+private function getBitmapData(component:UIComponent):BitmapData
+{
+	var b:BitmapData = new BitmapData(component.width, component.height);
+	b.draw(component, new Matrix());
+
+	return b;
+}
+
+public function brushImageMouseDown(event:MouseEvent):void {
+	var type:int;
+	
+	type = int(event.localX / BRUSH_WIDTH);
+	
+	if (type == 3) {
+		return;
+	}
+	
+	if (20 < event.localY) {
+		type += 3;
+	}
+	brushType = type;
+	
+	this.setBoxImageXY();
+}
+
+public function setBoxImageXY():void {
+
+	if (brushType < 3) {
+		boxImage.x = brushType * BRUSH_WIDTH + brushImage.x;
+		boxImage.y = brushImage.y;
+	} else {
+		boxImage.x = (brushType - 3) * BRUSH_WIDTH + brushImage.x;
+		boxImage.y = brushImage.y + BRUSH_WIDTH;
+	}
+}
+
+private function drawBaseImage():void {
+        	
+   	if (Application.application.parameters.baseimage == '') {
+  		return;
+   	}
+            
+    var loader:Loader = new Loader();
+    loader.contentLoaderInfo.addEventListener(Event.COMPLETE, loadImageCompleteHandler);
+    loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, loadImageIoErrorHandler);
+
+    var request:URLRequest = new URLRequest(Application.application.parameters.baseimage);
+    loader.load(request);
+    addChild(loader);
+}
+
+private function loadImageCompleteHandler(event:Event):void {
+    var loader:Loader = Loader(event.target.loader);
+    var image:Bitmap = Bitmap(loader.content);
+    baseBitmapData = image.bitmapData;
+            
+  	mainImage.graphics.beginBitmapFill(baseBitmapData);
+  	mainImage.graphics.drawRect( 0, 0, mainImage.width, mainImage.height );
+	mainImage.graphics.endFill();
+}
+
+private function loadImageIoErrorHandler(event:IOErrorEvent):void {
+    Alert.show("Unable to load image: " + url);
+}
+
+public function onKeyDown(event:KeyboardEvent):void {
+	var code:uint = event.keyCode;
+	if (code == 90) {
+		// 'z' キー
+		undo();
+	}
+}
+
+	
+		]]>
+	</mx:Script>
+	 
+	<mx:Image x="126" y="10" id="mainImage" width="640" height="480"/>
+	<mx:Image x="0" y="0" width="126" height="480" id="sideBackImage" />
+	<mx:Panel x="10" y="10" width="108" height="398" layout="absolute" title="nextpaint">
+		<mx:Button x="10" y="10" width="30" height="30" icon="@Embed(source='disk-black.png')" click="mainImageUpload()" id="saveButton" toolTip="Save" />
+		<mx:Button x="10" y="48" icon="@Embed(source='color-picker.png')" width="30" height="30" click="clickSpuitButton()" id="spuitButton" toolTip="Color Picker" />
+		<mx:Image x="14" y="86" source="@Embed(source='brush.png')" id="brushImage"/>
+		<mx:Image x="14" y="164" source="@Embed(source='color.png')" id="colorImage"/>
+		<mx:ColorPicker x="33" y="164" id="colorPicker"/>
+		<mx:Button x="48" y="48" icon="@Embed(source='arrow-turn-180.png')" width="30" height="30" click="undo()" id="undoButton" toolTip="Undo" />
+		<mx:Button x="48" y="10" icon="@Embed(source='report-paper.png')" width="30" height="30" click="mainImageClear();" id="clearButton" toolTip="Clear" />
+		<mx:Image x="14" y="86" source="@Embed(source='box.png')" id="boxImage"/>
+		<mx:ComboBox x="11.5" y="134" id="alphaComboBox" toolTip="Transparency">
+    	    <mx:dataProvider>
+        	    <mx:Array>
+            	    <mx:Object label="100" />
+    	            <mx:Object label="90" />
+	                <mx:Object label="80" />
+                	<mx:Object label="70" />
+            	    <mx:Object label="60" />
+        	        <mx:Object label="50" />
+    	            <mx:Object label="40" />
+	                <mx:Object label="30" />
+                	<mx:Object label="20" />
+            	    <mx:Object label="10" />
+        	    </mx:Array>
+    	    </mx:dataProvider>
+		</mx:ComboBox>		
+	</mx:Panel>
+	<mx:Fade id="fadeOut" duration="4500" alphaFrom="1.0" alphaTo="0.2" target="{title}"  />
+	<mx:Image x="144" y="30" id="title" source="@Embed(source='title.png')" hideEffect="{fadeOut}" visible="false" />
+	<mx:Label x="10" y="416" text="(C) 2009 tokita" color="#000000"/>
+	<mx:LinkButton x="5" y="430" label="http://tokita.net/" fontSize="8" click="clickLinkButton()"/>
+
+</mx:Application>
